@@ -904,6 +904,94 @@
       margin-bottom: 0.5rem;
       color: #0f172a;
     }
+    .workspace-tabs {
+      max-width: 1120px;
+      margin: 0 auto 0.9rem auto;
+      display: flex;
+      gap: 0.35rem;
+      background: #e2e8f0;
+      padding: 0.28rem;
+      border-radius: 0.65rem;
+    }
+    .workspace-tab-btn {
+      flex: 1;
+      padding: 0.5rem 0.85rem;
+      font-size: 0.88rem;
+      font-weight: 600;
+      border-radius: 0.5rem;
+      background: transparent;
+      color: #475569;
+      min-height: 40px;
+    }
+    .workspace-tab-btn.active {
+      background: #ffffff;
+      color: #0f172a;
+      box-shadow: 0 1px 4px rgba(15, 23, 42, 0.1);
+    }
+    .saved-papers-panel {
+      max-width: 1120px;
+      margin: 0 auto;
+    }
+    .saved-papers-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    .saved-paper-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.75rem;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 0.65rem;
+    }
+    .saved-paper-title {
+      font-size: 0.98rem;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .saved-paper-meta {
+      font-size: 0.82rem;
+      color: #475569;
+      line-height: 1.45;
+    }
+    .voice-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 0.55rem;
+      padding: 0.55rem 0.7rem;
+      margin-bottom: 0.85rem;
+    }
+    .btn-voice {
+      background: #2563eb;
+      color: #ffffff;
+      font-size: 0.82rem;
+      padding: 0.45rem 0.75rem;
+      border-radius: 0.45rem;
+      min-height: 36px;
+    }
+    .btn-voice.listening {
+      background: #dc2626;
+      color: #ffffff;
+    }
+    .voice-lang-select {
+      width: auto;
+      padding: 0.35rem 0.5rem;
+      font-size: 0.8rem;
+      min-height: 36px;
+    }
+    .voice-status {
+      font-size: 0.76rem;
+      color: #1e40af;
+      flex: 1 1 100%;
+    }
     .modal-backdrop {
       position: fixed;
       inset: 0;
@@ -940,12 +1028,18 @@
     }
 
     @media print {
+      html,
       body {
-        background: #ffffff;
-        padding: 0;
+        background: #ffffff !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        overflow: visible !important;
+        height: auto !important;
       }
       .app-header,
+      .workspace-tabs,
       .mobile-tabs,
+      .saved-papers-panel,
       .summary-bar,
       .editor-panel,
       .btn-icon,
@@ -959,13 +1053,27 @@
         background: transparent;
         padding: 0.55rem 0;
       }
-      .layout {
-        display: block;
+      .layout,
+      #mainLayout,
+      #mainLayout.hidden {
+        display: block !important;
+        width: 100% !important;
       }
-      .paper-sheet {
-        border: none;
-        box-shadow: none;
-        padding: 0;
+      .paper-sheet,
+      .layout.mobile-view-editor .paper-sheet,
+      .layout.mobile-view-preview .paper-sheet {
+        display: block !important;
+        overflow: visible !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        width: 100% !important;
+      }
+      .paper-watermark {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
       }
     }
   </style>
@@ -986,6 +1094,7 @@
         <option value="board80">Board Pattern Starter (Class X)</option>
       </select>
       <button type="button" id="toggleKeyBtn" class="btn-toggle">Show Marking Scheme</button>
+      <button type="button" id="saveHistoryBtn" class="btn-toggle">Save to History</button>
       <button type="button" id="exportBtn" class="btn-reset">Save Paper (.json)</button>
       <button type="button" id="importBtn" class="btn-reset">Load Paper</button>
       <input type="file" id="importFileInput" accept=".json" class="hidden" />
@@ -1012,6 +1121,11 @@
     </div>
     <div id="summaryPills" class="summary-pills"></div>
   </section>
+
+  <div class="workspace-tabs" role="tablist" aria-label="Workspace Sections">
+    <button type="button" id="wsTabDesignerBtn" class="workspace-tab-btn active" role="tab" aria-selected="true">Question Paper Designer</button>
+    <button type="button" id="wsTabSavedBtn" class="workspace-tab-btn" role="tab" aria-selected="false">Saved Papers (<span id="savedCountBadge">0</span>)</button>
+  </div>
 
   <div class="mobile-tabs" role="tablist" aria-label="Switch View">
     <button type="button" id="tabEditorBtn" class="mobile-tab-btn active" role="tab" aria-selected="true">Editor</button>
@@ -1199,6 +1313,16 @@
         </select>
       </div>
 
+      <div class="voice-bar">
+        <button type="button" id="voiceBtn" class="btn-voice">🎙️ Voice Type</button>
+        <select id="voiceLangSelect" class="voice-lang-select" aria-label="Voice Dictation Language">
+          <option value="en-IN">English (IN)</option>
+          <option value="hi-IN">हिन्दी (Hindi)</option>
+          <option value="bn-IN">বাংলা (Bengali)</option>
+        </select>
+        <span id="voiceStatus" class="voice-status">Tap Voice Type, then speak to dictate into the active question box.</span>
+      </div>
+
       <details class="section-notes-box" style="margin-bottom: 0.85rem;">
         <summary>Quick Insert: Math, Science, हिन्दी &amp; বাংলা</summary>
         <div class="notes-inner">
@@ -1348,6 +1472,17 @@
       <div id="questionsContainer"></div>
     </section>
   </main>
+
+  <section id="savedPapersPanel" class="panel saved-papers-panel hidden" aria-label="Saved Question Papers">
+    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.75rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.75rem;">
+      <div>
+        <h2 style="border: none; margin: 0; padding: 0;">Saved Question Papers</h2>
+        <p style="font-size: 0.84rem; color: #64748b; margin-top: 0.2rem;">Save snapshots of your papers to reload, edit, or print anytime.</p>
+      </div>
+      <button type="button" id="saveHistoryBtn2" class="btn-primary" style="width: auto; flex: none;">+ Save Current Paper</button>
+    </div>
+    <div id="savedPapersList" class="saved-papers-grid"></div>
+  </section>
 
   <div id="installModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="installModalTitle">
     <div class="modal-card">
@@ -3003,6 +3138,206 @@
       bengaliTranslitPreview.textContent = "বাংলা প্রিভিউ...";
     });
 
+    // Saved Question Papers History
+    const SAVED_PAPERS_KEY = "cbse_saved_papers_v1";
+    let savedPapers = [];
+
+    const wsTabDesignerBtn = document.getElementById("wsTabDesignerBtn");
+    const wsTabSavedBtn = document.getElementById("wsTabSavedBtn");
+    const savedCountBadge = document.getElementById("savedCountBadge");
+    const savedPapersPanel = document.getElementById("savedPapersPanel");
+    const savedPapersList = document.getElementById("savedPapersList");
+    const saveHistoryBtn = document.getElementById("saveHistoryBtn");
+    const saveHistoryBtn2 = document.getElementById("saveHistoryBtn2");
+    const mobileTabsBar = document.querySelector(".mobile-tabs");
+    const summaryBar = document.querySelector(".summary-bar");
+
+    function loadSavedPapers() {
+      try {
+        const raw = localStorage.getItem(SAVED_PAPERS_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) savedPapers = parsed;
+        }
+      } catch (e) {
+        // Ignore storage read errors
+      }
+    }
+
+    function persistSavedPapers() {
+      try {
+        localStorage.setItem(SAVED_PAPERS_KEY, JSON.stringify(savedPapers));
+      } catch (e) {
+        // Ignore storage write errors
+      }
+    }
+
+    function setWorkspaceTab(tab) {
+      const isDesigner = tab === "designer";
+      wsTabDesignerBtn.classList.toggle("active", isDesigner);
+      wsTabSavedBtn.classList.toggle("active", !isDesigner);
+      wsTabDesignerBtn.setAttribute("aria-selected", String(isDesigner));
+      wsTabSavedBtn.setAttribute("aria-selected", String(!isDesigner));
+      mainLayout.classList.toggle("hidden", !isDesigner);
+      summaryBar.classList.toggle("hidden", !isDesigner);
+      if (mobileTabsBar) mobileTabsBar.classList.toggle("hidden", !isDesigner);
+      savedPapersPanel.classList.toggle("hidden", isDesigner);
+      if (!isDesigner) renderSavedPapers();
+    }
+
+    function saveCurrentPaperToHistory() {
+      const data = getPaperData();
+      const totalM = data.questions
+        .filter((q) => Number(countInputs[q.section].value) > 0)
+        .reduce((sum, q) => sum + q.marks, 0);
+      const entry = {
+        savedId: Date.now(),
+        savedAt: new Date().toLocaleString(),
+        totalMarks: totalM,
+        questionCount: data.questions.length,
+        data
+      };
+      savedPapers.unshift(entry);
+      persistSavedPapers();
+      renderSavedPapers();
+      saveStatus.textContent = "Saved to History";
+      saveStatus.style.color = "#15803d";
+    }
+
+    function renderSavedPapers() {
+      savedCountBadge.textContent = String(savedPapers.length);
+      savedPapersList.innerHTML = "";
+      if (savedPapers.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "bank-empty";
+        empty.textContent = 'No saved papers yet. Click "Save to History" to store your current question paper here.';
+        savedPapersList.appendChild(empty);
+        return;
+      }
+
+      savedPapers.forEach((entry) => {
+        const card = document.createElement("div");
+        card.className = "saved-paper-card";
+
+        const title = document.createElement("div");
+        title.className = "saved-paper-title";
+        title.textContent = (entry.data.meta.exam || "Untitled Exam") + " — " + (entry.data.meta.classLevel || "") + " " + (entry.data.meta.subject || "");
+
+        const meta = document.createElement("div");
+        meta.className = "saved-paper-meta";
+        meta.textContent = (entry.data.meta.school || "School") + " • " + entry.questionCount + " Qs • " + entry.totalMarks + " Marks • Saved " + entry.savedAt;
+
+        const actions = document.createElement("div");
+        actions.className = "bank-actions";
+
+        const loadBtn = document.createElement("button");
+        loadBtn.type = "button";
+        loadBtn.className = "btn-edit";
+        loadBtn.textContent = "Open Paper";
+        loadBtn.addEventListener("click", () => {
+          cancelEdit();
+          applyPaperData(entry.data);
+          syncScienceDivisionUI();
+          syncActiveSections();
+          saveDraft();
+          renderPaper();
+          setWorkspaceTab("designer");
+        });
+
+        const delBtn = document.createElement("button");
+        delBtn.type = "button";
+        delBtn.className = "btn-remove";
+        delBtn.textContent = "Delete";
+        delBtn.addEventListener("click", () => {
+          savedPapers = savedPapers.filter((p) => p.savedId !== entry.savedId);
+          persistSavedPapers();
+          renderSavedPapers();
+        });
+
+        actions.appendChild(loadBtn);
+        actions.appendChild(delBtn);
+        card.appendChild(title);
+        card.appendChild(meta);
+        card.appendChild(actions);
+        savedPapersList.appendChild(card);
+      });
+    }
+
+    wsTabDesignerBtn.addEventListener("click", () => setWorkspaceTab("designer"));
+    wsTabSavedBtn.addEventListener("click", () => setWorkspaceTab("saved"));
+    saveHistoryBtn.addEventListener("click", saveCurrentPaperToHistory);
+    saveHistoryBtn2.addEventListener("click", saveCurrentPaperToHistory);
+
+    // Voice Command Typing (Web Speech API)
+    const voiceBtn = document.getElementById("voiceBtn");
+    const voiceLangSelect = document.getElementById("voiceLangSelect");
+    const voiceStatus = document.getElementById("voiceStatus");
+    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition = null;
+    let isListening = false;
+
+    if (!SpeechRec) {
+      voiceStatus.textContent = "Voice typing is supported in Chrome, Edge, or Android/iOS browsers with Speech Recognition.";
+    }
+
+    voiceBtn.addEventListener("click", () => {
+      if (!SpeechRec) {
+        voiceStatus.textContent = "Your current browser does not support Web Speech voice typing. Try Chrome or Edge.";
+        voiceStatus.style.color = "#b91c1c";
+        return;
+      }
+
+      if (isListening && recognition) {
+        recognition.stop();
+        return;
+      }
+
+      recognition = new SpeechRec();
+      recognition.lang = voiceLangSelect.value;
+      recognition.interimResults = false;
+      recognition.continuous = true;
+
+      recognition.onstart = () => {
+        isListening = true;
+        voiceBtn.classList.add("listening");
+        voiceBtn.textContent = "⏹ Stop Voice";
+        voiceStatus.textContent = "Listening (" + voiceLangSelect.options[voiceLangSelect.selectedIndex].text + ")... speak clearly.";
+        voiceStatus.style.color = "#b91c1c";
+      };
+
+      recognition.onresult = (event) => {
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (event.results[i].isFinal) {
+            const spoken = event.results[i][0].transcript.trim();
+            if (spoken) {
+              const target = lastFocusedInput || questionInput;
+              const prefix = target.value && !target.value.endsWith(" ") && !target.value.endsWith("\n") ? " " : "";
+              insertAtCursor(prefix + spoken);
+            }
+          }
+        }
+      };
+
+      recognition.onerror = (event) => {
+        voiceStatus.textContent = "Voice error: " + event.error + ". Check microphone permission.";
+        voiceStatus.style.color = "#b91c1c";
+      };
+
+      recognition.onend = () => {
+        isListening = false;
+        voiceBtn.classList.remove("listening");
+        voiceBtn.textContent = "🎙️ Voice Type";
+        voiceStatus.textContent = "Voice typing stopped. Tap Voice Type to dictate again.";
+        voiceStatus.style.color = "#1e40af";
+      };
+
+      try {
+        recognition.start();
+      } catch (err) {
+        voiceStatus.textContent = "Could not start microphone.";
+      }
+    });
+
     // PWA Install & Offline Service Worker
     let deferredInstallPrompt = null;
     const installAppBtn = document.getElementById("installAppBtn");
@@ -3036,6 +3371,8 @@
 
     // Initial load
     loadDraft();
+    loadSavedPapers();
+    renderSavedPapers();
     syncFetchSubjects();
     syncScienceDivisionUI();
     syncActiveSections();
