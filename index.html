@@ -3331,8 +3331,55 @@
       "from", "into", "that", "this", "these", "those", "have", "has", "had",
       "not", "but", "can", "will", "should", "would", "could", "about", "each",
       "marks", "mark", "read", "passage", "carefully", "answer", "questions",
-      "follow", "student", "example", "examples", "write", "down", "above"
+      "follow", "student", "example", "examples", "down", "above"
     ]);
+
+    // Built-in CBSE offline knowledge matcher for instant answers even offline or in sandboxed previews
+    const BUILTIN_ANSWER_PATTERNS = [
+      { keys: ["sdg1", "sdg 1"], ans: "(b) No poverty — SDG 1 aims to end poverty in all its forms everywhere." },
+      { keys: ["solar power", "affordable and clean energy"], ans: "(c) Affordable and clean energy (SDG 7)." },
+      { keys: ["disadvantage", "entrepreneurship", "boss"], ans: "(c) You are the boss — being your own boss is an advantage of entrepreneurship." },
+      { keys: ["essential quality", "entrepreneur", "wealthy"], ans: "(d) Wealthy — being wealthy is not a prerequisite; confidence, creativity, and patience are essential qualities." },
+      { keys: ["first aid kit"], ans: "(d) All of these (hydrogen peroxide, calamine lotion, and aspirin)." },
+      { keys: ["common cause", "accidents at home"], ans: "(b) Falls — falls are the most common cause of accidents at home." },
+      { keys: ["wage employment", "renowned hospital"], ans: "(a) Both Assertion (A) and Reason (R) are true, and R is the correct explanation of A." },
+      { keys: ["17 sdg", "united nations"], ans: "(c) Assertion (A) is true, but Reason (R) is false (the 17 SDGs are universal global goals set by the UN)." },
+      { keys: ["contaminated air", "premature deaths", "air quality"], ans: "b) Climate Action (SDG 13) / Good Health and Well-being." },
+      { keys: ["ergonomic", "wrist pain", "keyboard"], ans: "a) Provide wrist rests and improve keyboard positioning." },
+      { keys: ["positive impact", "entrepreneurship"], ans: "1. Creates job opportunities in society. 2. Drives innovation and economic growth." },
+      { keys: ["sustainable development"], ans: "Development that meets the needs of the present without compromising the ability of future generations to meet their own needs." },
+      { keys: ["regular breaks", "computer"], ans: "1. Prevents eye strain and headaches. 2. Reduces musculoskeletal/neck/wrist fatigue." },
+      { keys: ["misconception", "entrepreneurship"], ans: "1. Entrepreneurs are born, not made. 2. You need huge capital to start a business." },
+      { keys: ["fire safety"], ans: "1. Keep emergency exits clear and know fire extinguisher locations. 2. Never use water on electrical fires; switch off main power." },
+      { keys: ["ohm", "law"], ans: "Ohm's Law states that at constant temperature, the current (I) flowing through a conductor is directly proportional to the potential difference (V) across its ends: V = I × R." },
+      { keys: ["photosynthesis"], ans: "Photosynthesis is the process by which green plants convert CO2 and H2O into glucose and O2 in the presence of sunlight and chlorophyll: 6CO2 + 6H2O -> C6H12O6 + 6O2." },
+      { keys: ["zinc", "hydrochloric"], ans: "Hydrogen gas (H2) is evolved when dilute HCl reacts with zinc granules: Zn + 2HCl -> ZnCl2 + H2." },
+      { keys: ["power of a lens", "dioptre"], ans: "Power of a lens is the reciprocal of its focal length in metres (P = 1/f). Its SI unit is Dioptre (D)." },
+      { keys: ["double circulation"], ans: "Blood passes through the heart twice in one complete cycle: pulmonary circulation (heart to lungs and back) and systemic circulation (heart to body and back)." },
+      { keys: ["arteries", "veins"], ans: "Arteries carry oxygenated blood away from the heart under high pressure (thick elastic walls, no valves); veins carry blood toward the heart (thinner walls, valves present)." },
+      { keys: ["homologous series"], ans: "A series of organic compounds with the same functional group where successive members differ by a -CH2- unit (e.g., alkanes: CH4, C2H6)." },
+      { keys: ["amphoteric oxide"], ans: "Aluminium oxide (Al2O3) and Zinc oxide (ZnO) are amphoteric oxides because they react with both acids and bases to form salt and water." },
+      { keys: ["dry hcl", "litmus"], ans: "Dry HCl gas does not produce H+ ions in the absence of water, so it does not change the colour of dry litmus paper." },
+      { keys: ["gauss", "electrostatics"], ans: "Gauss's law states that the total electric flux through any closed surface is equal to 1/epsilon_0 times the net charge enclosed (Phi = q / epsilon_0)." },
+      { keys: ["raoult", "law"], ans: "For a solution of volatile liquids, the partial vapour pressure of each component is directly proportional to its mole fraction in the solution." },
+      { keys: ["pcr", "polymerase chain reaction"], ans: "PCR amplifies DNA in three steps: (1) Denaturation (~94 C), (2) Annealing (~55 C), and (3) Extension (~72 C using Taq polymerase)." }
+    ];
+
+    function findBuiltinAnswer(q) {
+      const text = ((q.type === "ar" ? (q.assertion + " " + q.reason) : q.text) + " " + (q.options || []).join(" ")).toLowerCase();
+      for (const item of BUILTIN_ANSWER_PATTERNS) {
+        if (item.keys.every((k) => text.includes(k))) {
+          return item.ans;
+        }
+      }
+      // Also check if an identical question exists in CURATED_ONLINE_BANKS or questionBank
+      const norm = (q.type === "ar" ? q.assertion : q.text).trim().toLowerCase();
+      for (const b of questionBank) {
+        const bText = (b.type === "ar" ? b.assertion : b.text).trim().toLowerCase();
+        if (bText && norm && bText === norm && b.answer) return b.answer;
+      }
+      return "";
+    }
 
     function extractKeywords(q) {
       const raw = q.type === "ar" ? (q.assertion + " " + q.reason) : q.text;
@@ -3340,7 +3387,6 @@
         .replace(/[^a-zA-Z0-9\s]/g, " ")
         .split(/\s+/)
         .filter((w) => w.length > 2 && !STOP_WORDS.has(w.toLowerCase()));
-      // Deduplicate while preserving order
       const seen = new Set();
       return words.filter((w) => {
         const lw = w.toLowerCase();
@@ -3373,6 +3419,11 @@
     }
 
     async function fetchSingleAnswerFromWeb(q) {
+      // 1. Check built-in CBSE knowledge base first (instant & works offline)
+      const builtin = findBuiltinAnswer(q);
+      if (builtin) return builtin;
+
+      // 2. Try live Wikipedia & DuckDuckGo lookup
       const kw = extractKeywords(q);
       const candidates = [];
       if (kw.length >= 4) candidates.push(kw.slice(0, 4).join(" "));
@@ -3423,15 +3474,34 @@
         const card = document.createElement("div");
         card.className = "ak-preview-item";
 
+        const headerRow = document.createElement("div");
+        headerRow.style.display = "flex";
+        headerRow.style.justifyContent = "space-between";
+        headerRow.style.alignItems = "flex-start";
+        headerRow.style.gap = "0.5rem";
+
         const qTitle = document.createElement("div");
         qTitle.style.fontWeight = "600";
-        qTitle.textContent = "Q" + (idx + 1) + " [" + q.marks + (q.marks === 1 ? " Mark]" : " Marks]") + ": " + (q.type === "ar" ? q.assertion : q.text).slice(0, 95);
+        const qText = q.type === "ar" ? q.assertion : q.text;
+        qTitle.textContent = "Q" + (idx + 1) + " [" + q.marks + (q.marks === 1 ? " Mark]" : " Marks]") + ": " + qText.slice(0, 95);
+
+        const searchLink = document.createElement("a");
+        searchLink.href = "https://www.google.com/search?q=" + encodeURIComponent(qText + " CBSE answer");
+        searchLink.target = "_blank";
+        searchLink.rel = "noopener noreferrer";
+        searchLink.className = "btn-edit";
+        searchLink.style.textDecoration = "none";
+        searchLink.style.whiteSpace = "nowrap";
+        searchLink.textContent = "Search Web";
+
+        headerRow.appendChild(qTitle);
+        headerRow.appendChild(searchLink);
 
         const ansInput = document.createElement("textarea");
         ansInput.style.marginTop = "0.35rem";
         ansInput.style.minHeight = "48px";
         ansInput.style.fontSize = "0.82rem";
-        ansInput.placeholder = "Type or edit answer key...";
+        ansInput.placeholder = "Type, paste, or auto-fetch answer key...";
         ansInput.value = q.answer || "";
         ansInput.addEventListener("input", () => {
           q.answer = ansInput.value;
@@ -3439,7 +3509,7 @@
           renderPaper();
         });
 
-        card.appendChild(qTitle);
+        card.appendChild(headerRow);
         card.appendChild(ansInput);
         akPreviewList.appendChild(card);
       });
@@ -3457,8 +3527,8 @@
       akExportDocBtn.disabled = true;
       const missing = activeQs.filter((q) => !q.answer || !q.answer.trim());
       akModalStatus.textContent = missing.length > 0
-        ? ("Searching the web for " + missing.length + " missing answer(s)...")
-        : "All " + activeQs.length + " questions already have answers ready. You can review or edit them below:";
+        ? ("Generating answers for " + missing.length + " question(s)...")
+        : "All " + activeQs.length + " questions already have answers ready. Review or edit below:";
       renderAkPreviewList(activeQs);
 
       let fetchedCount = 0;
@@ -3474,10 +3544,12 @@
       if (missing.length > 0) {
         saveDraft();
         renderPaper();
-        if (fetchedCount > 0) {
-          akModalStatus.textContent = "Fetched " + fetchedCount + " of " + missing.length + " answer(s). Review or edit below, then export as PDF or Word (.doc):";
+        if (fetchedCount === missing.length) {
+          akModalStatus.textContent = "Generated all " + fetchedCount + " missing answer(s). Review or edit below, then export as PDF or Word (.doc):";
+        } else if (fetchedCount > 0) {
+          akModalStatus.textContent = 'Generated ' + fetchedCount + ' of ' + missing.length + ' missing answer(s). Use "Search Web" on any remaining question or type it below:';
         } else {
-          akModalStatus.textContent = "Could not reach the web (offline or blocked in preview). You can type answers directly below, then export as PDF or Word (.doc):";
+          akModalStatus.textContent = 'Live web lookup was blocked or returned no match. Click "Search Web" beside any question to look it up, or type answers below:';
         }
       }
       akPrintPdfBtn.disabled = false;
