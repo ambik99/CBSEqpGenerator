@@ -1042,6 +1042,41 @@
       flex-wrap: wrap;
       gap: 0.5rem;
     }
+    .portal-links-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin: 0.5rem 0;
+    }
+    .portal-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.35rem;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      color: #1e40af;
+      text-decoration: none;
+    }
+    .portal-chip:hover {
+      background: #eff6ff;
+      border-color: #93c5fd;
+    }
+    .custom-url-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.4rem;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 0.4rem;
+      padding: 0.35rem 0.5rem;
+      margin-top: 0.35rem;
+      font-size: 0.78rem;
+    }
     .modal-backdrop {
       position: fixed;
       inset: 0;
@@ -1490,10 +1525,29 @@
             <option value="Information Technology">Information Technology</option>
           </select>
         </div>
-        <div class="field" style="margin-bottom: 0.5rem;">
-          <input type="text" id="fetchUrlInput" placeholder="Optional: https://... JSON question bank URL" aria-label="Optional Question Bank JSON URL" />
-        </div>
         <button type="button" id="fetchBankBtn" class="btn-toggle" style="width: 100%;">Fetch Questions into Bank</button>
+
+        <div style="margin-top: 0.65rem;">
+          <label style="margin-bottom: 0.25rem;">Leading CBSE Portals (<span id="portalClassLabel">Class 10</span>)</label>
+          <div id="portalLinksGrid" class="portal-links-grid"></div>
+        </div>
+
+        <details class="section-notes-box" style="margin-top: 0.5rem; margin-bottom: 0;">
+          <summary>Add Popular Web URLs Manually</summary>
+          <div class="notes-inner">
+            <div class="field" style="margin-bottom: 0.45rem;">
+              <input type="text" id="customPortalNameInput" placeholder="Portal name (e.g., LearnCBSE Class 10)" aria-label="Portal Name" />
+            </div>
+            <div class="field" style="margin-bottom: 0.45rem;">
+              <input type="text" id="fetchUrlInput" placeholder="https://... (JSON or CBSE paper page URL)" aria-label="Custom Question Bank URL" />
+            </div>
+            <div class="form-actions">
+              <button type="button" id="saveCustomUrlBtn" class="btn-edit" style="flex: 1;">+ Save URL</button>
+              <button type="button" id="fetchCustomUrlBtn" class="btn-toggle" style="flex: 1;">Fetch from URL</button>
+            </div>
+            <div id="customUrlsList"></div>
+          </div>
+        </details>
         <p id="fetchStatus" class="fetch-status"></p>
       </div>
       <input type="text" id="bankSearchInput" placeholder="Search saved questions..." aria-label="Search Question Bank" />
@@ -2590,10 +2644,205 @@
       renderBank();
     }
 
+    const CUSTOM_URLS_KEY = "cbse_custom_portal_urls_v1";
+    let customPortalUrls = [];
+
+    const LEADING_CBSE_PORTALS = {
+      "Class 10": [
+        { name: "CBSE Question Bank", url: "https://cbseacademic.nic.in/qbclass10.html" },
+        { name: "CBSE SQP & MS", url: "https://cbseacademic.nic.in/sqp_classx_2026-27.html" },
+        { name: "CBSE Practice Qs", url: "https://cbseacademic.nic.in/additionalPQ.html" },
+        { name: "NCERT Exemplar", url: "https://ncert.nic.in/exemplar-problems.php?ln=en" },
+        { name: "myCBSEguide", url: "https://mycbseguide.com/course/cbse-class-10/1175/" },
+        { name: "Vedantu PYQs", url: "https://www.vedantu.com/previous-year-question-paper/cbse-previous-year-question-papers-class-10" },
+        { name: "BYJU'S Exemplar", url: "https://byjus.com/ncert-exemplar-class-10/" }
+      ],
+      "Class 12": [
+        { name: "CBSE Question Bank", url: "https://cbseacademic.nic.in/qbclass12.html" },
+        { name: "CBSE SQP & MS", url: "https://cbseacademic.nic.in/SQP_CLASSXii_2026-27.html" },
+        { name: "CBSE Practice Qs", url: "https://cbseacademic.nic.in/additionalPQ.html" },
+        { name: "NCERT Exemplar", url: "https://ncert.nic.in/exemplar-problems.php?ln=en" },
+        { name: "myCBSEguide", url: "https://mycbseguide.com/course/cbse-class-12/1250/" },
+        { name: "Vedantu Exemplar", url: "https://www.vedantu.com/textbook-solutions/ncert-exemplar-solutions-class-12" },
+        { name: "BYJU'S Exemplar", url: "https://byjus.com/ncert-exemplar-class-12-maths/" }
+      ]
+    };
+
+    const portalClassLabel = document.getElementById("portalClassLabel");
+    const portalLinksGrid = document.getElementById("portalLinksGrid");
+    const customPortalNameInput = document.getElementById("customPortalNameInput");
+    const saveCustomUrlBtn = document.getElementById("saveCustomUrlBtn");
+    const fetchCustomUrlBtn = document.getElementById("fetchCustomUrlBtn");
+    const customUrlsList = document.getElementById("customUrlsList");
+
+    function loadCustomUrls() {
+      try {
+        const raw = localStorage.getItem(CUSTOM_URLS_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) customPortalUrls = parsed;
+        }
+      } catch (e) {}
+    }
+
+    function saveCustomUrls() {
+      try {
+        localStorage.setItem(CUSTOM_URLS_KEY, JSON.stringify(customPortalUrls));
+      } catch (e) {}
+    }
+
+    function renderPortalLinks() {
+      const cls = fetchClassSelect.value;
+      portalClassLabel.textContent = cls;
+      portalLinksGrid.innerHTML = "";
+      const list = LEADING_CBSE_PORTALS[cls] || [];
+      list.forEach((p) => {
+        const a = document.createElement("a");
+        a.href = p.url;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.className = "portal-chip";
+        a.textContent = p.name + " ↗";
+        portalLinksGrid.appendChild(a);
+      });
+    }
+
+    async function fetchFromUrlIntoBank(targetUrl) {
+      const cls = fetchClassSelect.value;
+      const subj = fetchSubjectSelect.value;
+      if (!targetUrl || !targetUrl.startsWith("https://")) {
+        fetchStatus.textContent = "Enter a valid https:// URL to fetch from.";
+        fetchStatus.style.color = "#b91c1c";
+        return;
+      }
+      fetchStatus.textContent = "Fetching from " + targetUrl + "...";
+      fetchStatus.style.color = "#475569";
+      try {
+        const resp = await fetch(targetUrl);
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
+        const rawText = await resp.text();
+        let added = 0;
+        try {
+          const data = JSON.parse(rawText);
+          const list = Array.isArray(data) ? data : (Array.isArray(data.questions) ? data.questions : []);
+          list.forEach((item) => {
+            if (item && (item.text || item.assertion)) {
+              questionBank.unshift({
+                section: item.section || "Section A",
+                division: item.division || (subj === "Science" ? "Physics" : ""),
+                type: item.type || "standard",
+                text: item.text || "",
+                options: Array.isArray(item.options) ? item.options : [],
+                subQuestions: Array.isArray(item.subQuestions) ? item.subQuestions : [],
+                assertion: item.assertion || "",
+                reason: item.reason || "",
+                imageData: item.imageData || "",
+                orText: item.orText || "",
+                answer: item.answer || "",
+                marks: Number(item.marks) || 1,
+                bankId: nextBankId++
+              });
+              added += 1;
+            }
+          });
+        } catch (jsonErr) {
+          // Try extracting numbered questions from HTML page text
+          const doc = new DOMParser().parseFromString(rawText, "text/html");
+          const lines = (doc.body ? doc.body.innerText : rawText).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+          lines.forEach((line) => {
+            const m = line.match(/^(?:Q\.?\s*)?\d+[.)]\s+(.{15,240})$/);
+            if (m && added < 15) {
+              questionBank.unshift({
+                section: "Section A",
+                division: "",
+                type: "standard",
+                text: m[1].trim(),
+                options: [],
+                subQuestions: [],
+                assertion: "",
+                reason: "",
+                imageData: "",
+                orText: "",
+                answer: "",
+                marks: 1,
+                bankId: nextBankId++
+              });
+              added += 1;
+            }
+          });
+        }
+        if (added > 0) {
+          saveBank();
+          renderBank();
+          fetchStatus.textContent = "Fetched " + added + " question(s) from URL into your bank!";
+          fetchStatus.style.color = "#15803d";
+        } else {
+          fetchStatus.textContent = "Opened URL, but no structured questions were detected. Download the PDF/DOC from the portal and use Load Paper.";
+          fetchStatus.style.color = "#b45309";
+        }
+      } catch (err) {
+        fetchStatus.textContent = "Direct fetch blocked by site CORS policy; loaded curated " + cls + " " + subj + " questions and you can open the portal link directly.";
+        fetchStatus.style.color = "#b45309";
+        const key = cls + "|" + subj;
+        (CURATED_ONLINE_BANKS[key] || []).forEach((item) => {
+          questionBank.unshift({ ...item, bankId: nextBankId++ });
+        });
+        saveBank();
+        renderBank();
+      }
+    }
+
+    function renderCustomUrls() {
+      customUrlsList.innerHTML = "";
+      customPortalUrls.forEach((entry) => {
+        const row = document.createElement("div");
+        row.className = "custom-url-row";
+
+        const link = document.createElement("a");
+        link.href = entry.url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.style.color = "#1e40af";
+        link.style.fontWeight = "600";
+        link.style.textDecoration = "none";
+        link.style.overflow = "hidden";
+        link.style.textOverflow = "ellipsis";
+        link.style.whiteSpace = "nowrap";
+        link.textContent = entry.name + " ↗";
+
+        const btns = document.createElement("div");
+        btns.style.display = "flex";
+        btns.style.gap = "0.25rem";
+
+        const fBtn = document.createElement("button");
+        fBtn.type = "button";
+        fBtn.className = "btn-edit";
+        fBtn.textContent = "Fetch";
+        fBtn.addEventListener("click", () => fetchFromUrlIntoBank(entry.url));
+
+        const dBtn = document.createElement("button");
+        dBtn.type = "button";
+        dBtn.className = "btn-remove";
+        dBtn.textContent = "×";
+        dBtn.addEventListener("click", () => {
+          customPortalUrls = customPortalUrls.filter((u) => u.id !== entry.id);
+          saveCustomUrls();
+          renderCustomUrls();
+        });
+
+        btns.appendChild(fBtn);
+        btns.appendChild(dBtn);
+        row.appendChild(link);
+        row.appendChild(btns);
+        customUrlsList.appendChild(row);
+      });
+    }
+
     function syncFetchSubjects() {
       const cls = fetchClassSelect.value;
       const list = FETCH_SUBJECTS_BY_CLASS[cls] || [];
       fetchSubjectSelect.innerHTML = "";
+      renderPortalLinks();
       list.forEach((subj) => {
         const opt = document.createElement("option");
         opt.value = subj;
@@ -3289,6 +3538,23 @@
     addQuestionBtn.addEventListener("click", submitQuestionForm);
     cancelEditBtn.addEventListener("click", cancelEdit);
     fetchClassSelect.addEventListener("change", syncFetchSubjects);
+    saveCustomUrlBtn.addEventListener("click", () => {
+      const url = fetchUrlInput.value.trim();
+      const name = customPortalNameInput.value.trim() || url.replace(/^https?:\/\//, "").split("/")[0];
+      if (!url.startsWith("https://")) {
+        fetchStatus.textContent = "Please enter a valid https:// URL.";
+        fetchStatus.style.color = "#b91c1c";
+        return;
+      }
+      customPortalUrls.unshift({ id: Date.now(), name, url });
+      saveCustomUrls();
+      renderCustomUrls();
+      customPortalNameInput.value = "";
+      fetchUrlInput.value = "";
+      fetchStatus.textContent = "Saved portal URL: " + name;
+      fetchStatus.style.color = "#15803d";
+    });
+    fetchCustomUrlBtn.addEventListener("click", () => fetchFromUrlIntoBank(fetchUrlInput.value.trim()));
     fetchBankBtn.addEventListener("click", fetchOnlineQuestionBank);
     bankSearchInput.addEventListener("input", renderBank);
     toggleKeyBtn.addEventListener("click", () => {
@@ -3976,6 +4242,8 @@
     // Initial load
     loadDraft();
     loadSavedPapers();
+    loadCustomUrls();
+    renderCustomUrls();
     renderSavedPapers();
     syncFetchSubjects();
     syncScienceDivisionUI();
