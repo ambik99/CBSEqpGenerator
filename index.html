@@ -3320,55 +3320,101 @@
     const akExportDocBtn = document.getElementById("akExportDocBtn");
     const akCloseBtn = document.getElementById("akCloseBtn");
 
-    function buildAnswerQuery(q) {
+    const STOP_WORDS = new Set([
+      "which", "what", "when", "where", "who", "whom", "whose", "why", "how",
+      "define", "explain", "state", "write", "name", "list", "give", "draw",
+      "describe", "differentiate", "distinguish", "calculate", "find", "show",
+      "prove", "identify", "mention", "following", "between", "given", "statement",
+      "statements", "reason", "assertion", "two", "three", "four", "five", "any",
+      "one", "neat", "labelled", "labeled", "diagram", "role", "process", "does",
+      "do", "did", "is", "are", "was", "were", "the", "and", "for", "with",
+      "from", "into", "that", "this", "these", "those", "have", "has", "had",
+      "not", "but", "can", "will", "should", "would", "could", "about", "each",
+      "marks", "mark", "read", "passage", "carefully", "answer", "questions",
+      "follow", "student", "example", "examples", "write", "down", "above"
+    ]);
+
+    function extractKeywords(q) {
       const raw = q.type === "ar" ? (q.assertion + " " + q.reason) : q.text;
-      return raw
+      const words = raw
         .replace(/[^a-zA-Z0-9\s]/g, " ")
         .split(/\s+/)
-        .filter((w) => w.length > 2 && !["which", "what", "when", "where", "define", "explain", "state", "write", "name", "following", "between", "given", "statement"].includes(w.toLowerCase()))
-        .slice(0, 6)
-        .join(" ");
+        .filter((w) => w.length > 2 && !STOP_WORDS.has(w.toLowerCase()));
+      // Deduplicate while preserving order
+      const seen = new Set();
+      return words.filter((w) => {
+        const lw = w.toLowerCase();
+        if (seen.has(lw)) return false;
+        seen.add(lw);
+        return true;
+      });
+    }
+
+    async function wikiSearchAndExtract(queryStr) {
+      if (!queryStr) return null;
+      const searchUrl = "https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=" + encodeURIComponent(queryStr) + "&format=json&origin=*&srlimit=1";
+      const resp = await fetch(searchUrl);
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      const hit = data && data.query && data.query.search && data.query.search[0];
+      if (!hit || !hit.pageid) return null;
+
+      const extUrl = "https://en.wikipedia.org/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&exsentences=2&pageids=" + hit.pageid + "&format=json&origin=*";
+      const extResp = await fetch(extUrl);
+      if (extResp.ok) {
+        const extData = await extResp.json();
+        const page = extData && extData.query && extData.query.pages && extData.query.pages[String(hit.pageid)];
+        if (page && page.extract && page.extract.trim()) {
+          return { title: hit.title, text: page.extract.trim() };
+        }
+      }
+      const cleanSnippet = (hit.snippet || "").replace(/<[^>]+>/g, "").trim();
+      return cleanSnippet ? { title: hit.title, text: cleanSnippet + "..." } : null;
     }
 
     async function fetchSingleAnswerFromWeb(q) {
-      const query = buildAnswerQuery(q);
-      if (!query) return "";
-      // 1. Try Wikipedia REST summary / search API (CORS-enabled)
-      try {
-        const searchUrl = "https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=" + encodeURIComponent(query) + "&format=json&origin=*&srlimit=1";
-        const resp = await fetch(searchUrl);
-        if (resp.ok) {
-          const data = await resp.json();
-          const hit = data && data.query && data.query.search && data.query.search[0];
-          if (hit && hit.title) {
-            const sumResp = await fetch("https://en.wikipedia.org/api/rest_v1/page/summary/" + encodeURIComponent(hit.title));
-            if (sumResp.ok) {
-              const sumData = await sumResp.json();
-              if (sumData && sumData.extract) {
-                const snippet = sumData.extract.split(". ").slice(0, 2).join(". ");
-                return snippet + (snippet.endsWith(".") ? "" : ".") + " (Source: Wikipedia - " + hit.title + ")";
-              }
+      const kw = extractKeywords(q);
+      const candidates = [];
+      if (kw.length >= 4) candidates.push(kw.slice(0, 4).join(" "));
+      if (kw.length >= 2) candidates.push(kw.slice(0, 2).join(" "));
+      if (kw.length >= 1) candidates.push(kw.slice().sort((a, b) => b.length - a.length)[0]);
+
+      let result = null;
+      for (const queryStr of candidates) {
+        try {
+          result = await wikiSearchAndExtract(queryStr);
+          if (result && result.text) break;
+        } catch (e) {
+          // Try next candidate
+        }
+      }
+
+      if (!result && kw.length > 0) {
+        try {
+          const ddgResp = await fetch("https://api.duckduckgo.com/?q=" + encodeURIComponent(kw.slice(0, 3).join(" ")) + "&format=json&no_html=1&skip_disambig=1");
+          if (ddgResp.ok) {
+            const ddg = await ddgResp.json();
+            if (ddg && ddg.AbstractText) {
+              result = { title: ddg.AbstractSource || "Web", text: ddg.AbstractText };
             }
-            const cleanSnippet = hit.snippet.replace(/<[^>]+>/g, "");
-            if (cleanSnippet) return cleanSnippet + "... (Source: Wikipedia)";
           }
+        } catch (e) {
+          // Ignore fallback error
         }
-      } catch (e) {
-        // Ignore network/CORS errors and try fallback
       }
-      // 2. Try DuckDuckGo Instant Answer API (CORS-enabled)
-      try {
-        const ddgResp = await fetch("https://api.duckduckgo.com/?q=" + encodeURIComponent(query) + "&format=json&no_html=1&skip_disambig=1");
-        if (ddgResp.ok) {
-          const ddg = await ddgResp.json();
-          if (ddg && ddg.AbstractText) {
-            return ddg.AbstractText + " (Source: " + (ddg.AbstractSource || "Web") + ")";
-          }
+
+      if (!result || !result.text) return "";
+
+      let prefix = "";
+      if (q.type === "mcq" && Array.isArray(q.options) && q.options.length === 4) {
+        const labels = ["(a)", "(b)", "(c)", "(d)"];
+        const lowerText = result.text.toLowerCase();
+        const matchedIdx = q.options.findIndex((opt) => opt && lowerText.includes(opt.trim().toLowerCase()));
+        if (matchedIdx !== -1) {
+          prefix = labels[matchedIdx] + " " + q.options[matchedIdx] + " — ";
         }
-      } catch (e) {
-        // Ignore fallback error
       }
-      return "";
+      return prefix + result.text + " (Source: " + result.title + ")";
     }
 
     function renderAkPreviewList(activeQs) {
@@ -3376,15 +3422,25 @@
       activeQs.forEach((q, idx) => {
         const card = document.createElement("div");
         card.className = "ak-preview-item";
+
         const qTitle = document.createElement("div");
         qTitle.style.fontWeight = "600";
-        qTitle.textContent = "Q" + (idx + 1) + " [" + q.marks + (q.marks === 1 ? "M" : "M") + "]: " + (q.type === "ar" ? q.assertion : q.text).slice(0, 90);
-        const ansLine = document.createElement("div");
-        ansLine.style.color = q.answer ? "#166534" : "#b45309";
-        ansLine.style.marginTop = "0.25rem";
-        ansLine.textContent = q.answer ? ("Answer: " + q.answer) : "Answer not found online — you can edit this question to add one manually.";
+        qTitle.textContent = "Q" + (idx + 1) + " [" + q.marks + (q.marks === 1 ? " Mark]" : " Marks]") + ": " + (q.type === "ar" ? q.assertion : q.text).slice(0, 95);
+
+        const ansInput = document.createElement("textarea");
+        ansInput.style.marginTop = "0.35rem";
+        ansInput.style.minHeight = "48px";
+        ansInput.style.fontSize = "0.82rem";
+        ansInput.placeholder = "Type or edit answer key...";
+        ansInput.value = q.answer || "";
+        ansInput.addEventListener("input", () => {
+          q.answer = ansInput.value;
+          saveDraft();
+          renderPaper();
+        });
+
         card.appendChild(qTitle);
-        card.appendChild(ansLine);
+        card.appendChild(ansInput);
         akPreviewList.appendChild(card);
       });
     }
@@ -3401,8 +3457,8 @@
       akExportDocBtn.disabled = true;
       const missing = activeQs.filter((q) => !q.answer || !q.answer.trim());
       akModalStatus.textContent = missing.length > 0
-        ? ("Fetching answers from the internet for " + missing.length + " question(s)...")
-        : "All " + activeQs.length + " questions already have answers ready.";
+        ? ("Searching the web for " + missing.length + " missing answer(s)...")
+        : "All " + activeQs.length + " questions already have answers ready. You can review or edit them below:";
       renderAkPreviewList(activeQs);
 
       let fetchedCount = 0;
@@ -3418,9 +3474,11 @@
       if (missing.length > 0) {
         saveDraft();
         renderPaper();
-        akModalStatus.textContent = "Fetched " + fetchedCount + " of " + missing.length + " missing answer(s). Choose PDF or Word (.doc) below:";
-      } else {
-        akModalStatus.textContent = "Answer Key ready for all " + activeQs.length + " questions. Choose PDF or Word (.doc) below:";
+        if (fetchedCount > 0) {
+          akModalStatus.textContent = "Fetched " + fetchedCount + " of " + missing.length + " answer(s). Review or edit below, then export as PDF or Word (.doc):";
+        } else {
+          akModalStatus.textContent = "Could not reach the web (offline or blocked in preview). You can type answers directly below, then export as PDF or Word (.doc):";
+        }
       }
       akPrintPdfBtn.disabled = false;
       akExportDocBtn.disabled = false;
